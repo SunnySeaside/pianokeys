@@ -1,0 +1,53 @@
+50 LShift
+52 Z X C V B N M , . / RShift
+87 Num1 Num2 Num3
+104 NumEnter
+
+66 CapsLock
+38 A S D F G H J K L ; '
+36 Enter
+83 Num4 Num5 Num6
+86 NumAdd
+
+23 Tab Q W E R T Y U I O P [ ]
+51 \
+79 Num7 Num8 Num9
+86 Num+
+
+49 `
+10 1 2 3 4 5 6 7 8 9 0 - = Backspace
+77 NumLock
+106 Num/
+63 Num*
+82 Num-
+
+9 Esc
+67 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10
+95 F11 F12
+107 PrintScreen
+118 Insert
+119 Delete
+112 PgUp
+117 PgDown
+110 Home
+115 End
+
+37 LCtrl
+
+133 LSuper
+64 LAlt
+65 Space
+108 RAlt
+105 RCtrl
+113 Left
+116 Down
+114 Right
+90 Num0
+91 Num.
+104 NumEnter
+
+111 Up
+
+56 Pause
+78 ScrollLock
+135 Menu
