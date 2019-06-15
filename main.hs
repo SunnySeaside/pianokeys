@@ -65,19 +65,50 @@ pitchName = do
     Nothing -> return $ P letter octave
     Just x -> return $ P (succ letter) octave
 
-keyMapFile' keyDefs = (spaces'' *> keyMapBlock <* comment) `sepEndBy` (many1 eol) <* eof
-  where keyMapBlock = option [] ((try $ keyMapSeq keyDefs) <|> (keyMapEntry keyDefs)) --todo try is expensive
-keyMapFile keyDefs = liftM concat (keyMapFile' keyDefs)
+keyMapFile keyDefs = liftM concat blocks
+  where blocks=(spaces'' *> keyMapBlock <* comment) `sepEndBy` (many1 eol) <* eof
+        keyMapBlock = option [] (try keyMapSeq <|> keyMapEntry) --todo try is expensive
+        keyMapEntry = do
+          (keys,Just pitch) <- keyWithPitch
+          iter <- seqType
+          return $ keyMapSanitize (keyMapFrom keys (iter pitch))
+        keyWithPitch = liftM2 (,) keySymRange (optionMaybe $ spaces' *> pitchName)
+        keyMapSeq = do
+          string "seq"
+          st <- seqType
+          char '{'
+          spaces
+          entries <- (spaces'' *> keyWithPitch <* comment) `sepEndBy` (skipMany1 eol)
+          char '}'
+          let (pre,pivot:rest) = break (isJust . snd) entries --TODO:detect multiple pitches
+          let pitch = fromJust $ snd pivot
+          let preKeys = concat $ map fst pre
+          let preMap' = scanr (\k (_,p) -> (k,predPitch p)) (head $ fst pivot,st pitch) preKeys
+          let preMap = [(x,toPitch y) | (x,y) <- preMap']
+          let _:restMap = keyMapFrom (concat $ map fst (pivot:rest)) (st pitch)
+          return $ keyMapSanitize (preMap++restMap)
+        keySymRange = do
+          start <- keySym
+          sep <- optionMaybe $ char '~'
+          case sep of
+            Nothing -> return [start]
+            Just x -> liftM (keySymRange_lookup start) keySym
+-- TODO: optimize performance; maybe use map?
+        keySymRange_lookup start end =
+          let found=filter (not . null) (map (getSubSeq start end) keyDefs) in
+            if length found == 1 then
+              head found
+            else
+              error $ "multiple or none key sequences match "++start++"~"++end
 
-keyMapEntry keyDefs = do
-  (keys,Just pitch) <- (keyWithPitch keyDefs)
-  iter <- seqType
-  return $ keyMapSanitize (keyMapFrom keys (iter pitch))
+getSubSeq start end fullseq =
+  let t=dropWhile (/= start) fullseq in
+    foldr (\i l -> if i==end then [end]
+                   else if null l then []
+                   else i:l)
+          [] t
 keyMapFrom keys iter = zip keys (map toPitch (pitchFrom iter))
 keyMapSanitize m = [(x,y) | (x,Just y) <- m] --catMaybes
-
-keyWithPitch keyDefs = liftM2 (,) (keySymRange keyDefs)
-                                  (optionMaybe $ spaces' *> pitchName)
 
 -- TODO support different keys
 data PitchIter = WholeI Pitch | SemiI Pitch --todo add more
@@ -110,47 +141,6 @@ seqType = do
   case iterName of
     Nothing -> return defaultIter
     Just "default" -> return defaultIter
-
-
-keyMapSeq keyDefs = do
-  string "seq"
-  st <- seqType
-  char '{'
-  spaces
-  entries <- (spaces'' *> keyWithPitch' <* comment) `sepEndBy` (skipMany1 eol)
-  char '}'
-  let (pre,pivot:rest) = break (isJust . snd) entries --TODO:detect multiple pitches
-  let pitch = fromJust $ snd pivot
-  let preKeys = concat $ map fst pre
-  let preMap' = scanr (\k (_,p) -> (k,predPitch p)) (head $ fst pivot,st pitch) preKeys
-  let preMap = [(x,toPitch y) | (x,y) <- preMap']
-  let restMap = tail (keyMapFrom (concat $ map fst (pivot:rest)) (st pitch))
-  return $ keyMapSanitize (preMap++restMap)
-  where keyWithPitch' = (keyWithPitch keyDefs)
-
---keyMapSeqEntry keyDefs = try(keyWithPitch keyDefs) <|> (keySymRange 
-
-keySymRange keyDefs = do
-  start <- keySym
-  sep <- optionMaybe $ char '~'
-  case sep of
-    Nothing -> return [start]
-    Just x -> liftM (keySymRange_lookup keyDefs start) keySym
-
--- TODO: optimize performance; maybe use map?
-keySymRange_lookup keyDefs start end =
-  let found=filter (not . null) [getSubSeq kd start end | kd <- keyDefs] in
-    if length found == 1 then
-       head found
-    else
-       error $ "multiple or none key sequences match "++start++"~"++end
-
-getSubSeq fullseq start end =
-  let t=dropWhile (/= start) fullseq in
-    foldr (\i l -> if i==end then [end]
-                   else if null l then []
-                   else i:l)
-          [] t
 
 --https://stackoverflow.com/questions/10726085/how-do-i-get-parsec-to-let-me-call-read-int/10726784#10726784
 naturalNumber :: GenParser Char st Int
