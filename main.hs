@@ -3,6 +3,8 @@ import Data.Char
 import qualified Data.Map as Map
 import Control.Monad
 import Data.Maybe
+import System.Environment
+import System.Console.GetOpt
 
 keyDefFile = (spaces'' *> keySyms <* comment) `sepEndBy` eol <* eof
 keySyms = keySym `sepEndBy` spaces'
@@ -141,6 +143,7 @@ seqType = do
   case iterName of
     Nothing -> return defaultIter
     Just "default" -> return defaultIter
+    x -> fail "unknown iterator name"
 
 --https://stackoverflow.com/questions/10726085/how-do-i-get-parsec-to-let-me-call-read-int/10726784#10726784
 naturalNumber :: GenParser Char st Int
@@ -156,13 +159,50 @@ keyMapToXml keyCodes m = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" ++
   "<!DOCTYPE rawkeyboardmap>\n"++
   "<rawkeymap version=\"1.0\">\n"++
   concat["<mapping keycode=\""++(show i)++"\" note=\""++(show j)++"\"/>\n" | (i,j) <- nums]++
-  "</rawkeymap>"
+  "</rawkeymap>\n"
   where nums=[(fromJust (Map.lookup key keyCodes),fromEnum pitch) | (key,pitch) <- m]
 
---TODO:print syntax error
---TODO command-line arguments
+
+
+data Flag = Help | Keycodes String | Keydef String | Outfile String deriving (Eq)
 main = do
-  Right keyCodes <- parseFromFile keyCodeFile "linux.keycodes"
-  Right keyDefs <- parseFromFile keyDefFile "laptop.kbd"
-  Right keyMap <- parseFromFile (keyMapFile keyDefs) "rows.map"
-  putStrLn $ keyMapToXml keyCodes keyMap
+  argv0 <- getProgName
+  argv <- getArgs
+  let optDescr=[Option "h?" ["help"] (NoArg Help) "display help",
+                Option "c" ["keycodes"] (ReqArg Keycodes "FILE") "path of keycode file",
+                Option "d" ["keydef"] (ReqArg Keydef "FILE") "path of keyboard definition file",
+                Option "o" ["output"] (ReqArg Outfile "FILE") "path of output keymap"]
+  let (opts,args,errs) = getOpt Permute optDescr argv
+  if not (null errs) then do
+    fail $ concat errs
+  else if Help `elem` opts then do
+    putStrLn $ usageInfo ("Usage: "++argv0++" [OPTIONS..] [inputFile]") optDescr
+  else do
+    codeFile <- case [x | Keycodes x <- opts] of --todo: is the optimial?
+                 [x] -> return x
+                 [] -> return "linux.keycodes"
+                 x -> fail "only one keycode file may be specified"
+    keyCodes <- parseFileOrErr keyCodeFile codeFile
+    defFile <- case [x | Keydef x <- opts] of
+                 [x] -> return x
+                 [] -> return "laptop.kbd"
+                 x -> fail "only one keyboard definition file may be specified"
+    keyDefs <- parseFileOrErr keyDefFile defFile
+    keyMap <- case args of
+                [x] -> parseFileOrErr (keyMapFile keyDefs) x
+                [] -> fail "no input keymap specified" --TODO: stdin
+                x -> fail "only one input keymap may be specified"
+    outFunc <- case [x | Outfile x <- opts] of
+                 [x] -> return (writeFile x)
+                 [] -> return (writeFile "out.xml") --TODO: stdout or based on fileName
+                 x -> fail "only one output file may be specified"
+-- let (if null args then getContent <stdin>
+-- outFunc <-
+-- stdout writeFile readFile
+    outFunc $ keyMapToXml keyCodes keyMap
+
+parseFileOrErr parser file = do
+  res <- parseFromFile parser file
+  case res of
+    Left x -> fail $ show x
+    Right x -> return x
